@@ -25,6 +25,7 @@ class Order:
     price: int
     qty: int
     side: Side
+    cancelling: bool = False
 
 class OptionBot(UTCBot):
     """
@@ -32,10 +33,11 @@ class OptionBot(UTCBot):
     """
 
     async def handle_round_started(self):
-        self.orders: dict[int, Order] = {}
+        self.orders: dict[str, Order] = {}
         self.t = 0
         await asyncio.sleep(0.1)
         asyncio.create_task(self.handle_read_params())
+        asyncio.create_task(self.update_position())
 
     async def handle_read_params(self):
         """read the config every 1s"""
@@ -46,28 +48,41 @@ class OptionBot(UTCBot):
                 print("Unable to read file " + PARAM_FILE)
             await asyncio.sleep(1)
 
+    async def update_position(self):
+        """Update position every 0.5s"""
+        while True:
+            resp = await self.get_positions()
+            self.positions = resp.positions
+            await asyncio.sleep(0.5)
+
     async def handle_exchange_update(self, update: pb.FeedMessage):
         kind, _ = betterproto.which_one_of(update, "msg")
         # Competition event messages
         if kind == "generic_msg":
             msg = update.generic_msg.message
             print(msg)
+        elif kind == "pnl_msg":
+            msg = update.pnl_msg
+            print(f"realized: {msg.realized_pnl}, m2m: {msg.m2m_pnl}")
         elif kind == "market_snapshot_msg":
             msg = update.market_snapshot_msg
             self.t += 1
             ts = msg.timestamp
             books = msg.books
+            self.clear_prev_market()
             self.make_market(books)
         elif kind == "fill_msg":
             msg = update.fill_msg
             if msg.remaining_qty == 0:
-                print(f"Order {msg.order_id} done.")
+                # print(f"Order {msg.order_id} done.")
                 self.orders.pop(msg.order_id, None)
         elif kind == "order_cancelled_msg":
             msg = update.order_cancelled_msg
             if msg.intentional: # TODO: deal with unintential cancels, if it breaks
                 for id in msg.order_ids:
                     self.orders.pop(id)
+            else:
+                print("WARNING: unintentional cancels")
 
     async def quote(self, symbol, side, qty, price):
         response = await self.place_order(symbol, Type.LIMIT, side, qty, price)
@@ -76,6 +91,14 @@ class OptionBot(UTCBot):
             return False
         self.orders[response.order_id] = Order(response.order_id, symbol, price, qty, side)
         return True
+
+    def clear_prev_market(self):
+        for id, order in self.orders.items():
+            if order.cancelling:
+                continue
+            # print(f"Cancelling order {id}")
+            asyncio.create_task(self.cancel_order(id))
+            order.cancelling = True
 
     def make_market(self, books):
         for symbol, book in books.items():
@@ -86,12 +109,9 @@ class OptionBot(UTCBot):
             # join bb ba
             asyncio.create_task(self.quote(symbol, Side.BID, 2, best_bid))
             asyncio.create_task(self.quote(symbol, Side.ASK, 2, best_ask))
-            print(f"{symbol}: Quoting {best_bid}@{best_ask}")
-            
-            
-            
-
-
+            # print(f"{symbol}: Quoting {best_bid}@{best_ask}")
+            # print(self.positions)
+        
 
 if __name__ == "__main__":
     start_bot(OptionBot)
