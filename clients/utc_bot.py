@@ -230,8 +230,8 @@ class UTCBot:
                 reg_resp = await self.__service_stub.register(creds=self.creds)
                 break
             except OSError:
-                print(" > Unable to connect to exchange... Trying again in 5s")
-                await asyncio.sleep(5)
+                print(" > Unable to connect to exchange... Trying again in 0.1s")
+                await asyncio.sleep(0.1)
 
         if not reg_resp.ok:
             print(" > Invalid registration attempt: " + reg_resp.message)
