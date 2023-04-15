@@ -82,6 +82,7 @@ class OptionBot(UTCBot):
                 self.risks["theta"] += v * theta(flag, under, strike, expiration, 0, vol, 0)
             print(self.positions)
             print(self.risks)
+            print(len(self.orders))
             await asyncio.sleep(0.1)
 
     async def handle_exchange_update(self, update: pb.FeedMessage):
@@ -145,7 +146,7 @@ class OptionBot(UTCBot):
             size = self.params["quote_size"]
             hs = self.params["half_spread"]
             pos = self.positions.get(symbol, 0)
-            skew = 0 if abs(pos) < 100 else (0.1 if pos > 0 else -0.1)
+            skew = 0 if abs(pos) < 100 else (-0.1 if pos > 0 else 0.1)
             bid = round(fair_price - hs + skew, 1)
             ask = round(fair_price + hs + skew, 1)
             asyncio.create_task(self.quote(symbol, Side.BID, size, bid))
